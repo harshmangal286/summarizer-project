@@ -3,13 +3,14 @@ uvicorn
 pydantic
 pdfplumber
 openai
-docx
 transformers
 requests
 torch
 python-docx
 services
-tessarc
 nltk
 pdfminer.six 
 pymupdf
+dotenv
+google-generativeai
+python-multipart

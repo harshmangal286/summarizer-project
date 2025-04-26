@@ -1,0 +1,27 @@
+import tkinter as tk
+from tkinter import messagebox
+from tkinter import ttk  # Import ttk
+
+def show_message_box(event):  # Accept the event parameter
+    stream = combo_box.get()  # Get selected value from the combobox
+    messagebox.showinfo("Selected Stream", f"The stream is {stream}")
+
+# Create the main window
+win = tk.Tk()
+win.title("Combo box example")
+
+# Define options for combo box 
+options = ["EEE", "Mechanical", "CSE"]
+
+# Create combobox 
+combo_box = ttk.Combobox(win, values=options)
+combo_box.pack()
+
+# Set the default selected option 
+combo_box.set(options[0])
+
+# Bind the selection function to the combobox 
+combo_box.bind("<<ComboboxSelected>>", show_message_box)
+
+# Start the main event loop
+win.mainloop()

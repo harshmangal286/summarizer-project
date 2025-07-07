@@ -6,6 +6,7 @@ import "../style.css";
 import ReactMarkdown from "react-markdown";
 import { Document, Packer, Paragraph, TextRun } from "docx";
 import { saveAs } from "file-saver";
+import Chatbot from "./Chatbot";
 
 const Summarizer = ({ addToHistory, resetChat, currentChat }) => {
   const [selectedFile, setSelectedFile] = useState(null);
@@ -15,13 +16,17 @@ const Summarizer = ({ addToHistory, resetChat, currentChat }) => {
   const [error, setError] = useState("");
   const [showSummaryMsg, setShowSummaryMsg] = useState(false);
   const [selectedModel, setSelectedModel] = useState("gemini");
+  const [fileExpanded, setFileExpanded] = useState(true);
+  const [chatStarted, setChatStarted] = useState(false);
 
+  // Cleanup URL on unmount
   useEffect(() => {
     return () => {
       if (fileUrl) URL.revokeObjectURL(fileUrl);
     };
   }, [fileUrl]);
 
+  // On chat history load
   useEffect(() => {
     if (currentChat?.file) {
       setSelectedFile(currentChat.file);
@@ -29,11 +34,14 @@ const Summarizer = ({ addToHistory, resetChat, currentChat }) => {
       setShowSummaryMsg(true);
       setError("");
       setFileUrl(URL.createObjectURL(currentChat.file));
+      setFileExpanded(true);
+      setChatStarted(false);
     } else {
       resetFields();
     }
   }, [currentChat]);
 
+  // Reset fields on new chat trigger
   useEffect(() => {
     if (resetChat) resetFields();
   }, [resetChat]);
@@ -44,13 +52,17 @@ const Summarizer = ({ addToHistory, resetChat, currentChat }) => {
     setSummary([]);
     setError("");
     setShowSummaryMsg(false);
+    setFileExpanded(true);
+    setChatStarted(false);
   };
 
   const handleFileChange = (event) => {
     const file = event.target.files[0];
     if (!file) return;
 
-    if (!["application/pdf", "text/plain", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"].includes(file.type)) {
+    if (
+      !["application/pdf", "text/plain", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"].includes(file.type)
+    ) {
       setError("Only PDF, text, and DOCX files are supported.");
       return;
     }
@@ -60,6 +72,7 @@ const Summarizer = ({ addToHistory, resetChat, currentChat }) => {
     setSummary([]);
     setShowSummaryMsg(false);
     setFileUrl(URL.createObjectURL(file));
+    setFileExpanded(true);
   };
 
   const formatSummary = (text) => {
@@ -97,21 +110,14 @@ const Summarizer = ({ addToHistory, resetChat, currentChat }) => {
     }
   };
 
-  // MARKDOWN TO DOCX PARSER
   const parseMarkdownToDocxParagraphs = (lines) => {
     return lines.map((line) => {
       if (line.startsWith("###")) {
-        return new Paragraph({
-          children: [new TextRun({ text: line.replace(/^###/, "").trim(), bold: true, size: 28 })],
-        });
+        return new Paragraph({ children: [new TextRun({ text: line.replace(/^###/, "").trim(), bold: true, size: 28 })] });
       } else if (line.startsWith("##")) {
-        return new Paragraph({
-          children: [new TextRun({ text: line.replace(/^##/, "").trim(), bold: true, size: 32 })],
-        });
+        return new Paragraph({ children: [new TextRun({ text: line.replace(/^##/, "").trim(), bold: true, size: 32 })] });
       } else if (line.startsWith("#")) {
-        return new Paragraph({
-          children: [new TextRun({ text: line.replace(/^#/, "").trim(), bold: true, size: 36 })],
-        });
+        return new Paragraph({ children: [new TextRun({ text: line.replace(/^#/, "").trim(), bold: true, size: 36 })] });
       } else {
         return new Paragraph({
           children: line.split(/\*\*(.*?)\*\*/g).map((part, i) =>
@@ -124,11 +130,7 @@ const Summarizer = ({ addToHistory, resetChat, currentChat }) => {
 
   const handleDownload = async () => {
     const doc = new Document({
-      sections: [
-        {
-          children: parseMarkdownToDocxParagraphs(summary),
-        },
-      ],
+      sections: [{ children: parseMarkdownToDocxParagraphs(summary) }],
     });
 
     const blob = await Packer.toBlob(doc);
@@ -148,15 +150,6 @@ const Summarizer = ({ addToHistory, resetChat, currentChat }) => {
             Choose File
           </label>
         )}
-
-        <select className="form-select mx-3" value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)}>
-          <option value="gemini">Google Gemini</option>
-          {/* <option value="bart">BART (facebook/bart-large-cnn)</option>
-          <option value="t5-large">T5 Large (google/flan-t5-large)</option>
-          <option value="t5-base">T5 Base (google/flan-t5-base)</option>
-          <option value="t5-small">T5 Small (google/flan-t5-small)</option> */}
-        </select>
-
         {!showSummaryMsg ? (
           <button className="btn btn-success mx-3" onClick={handleSummarize} disabled={!selectedFile || loading}>
             {loading ? (
@@ -172,37 +165,42 @@ const Summarizer = ({ addToHistory, resetChat, currentChat }) => {
           <div className="alert alert-info mx-3">Summary can be viewed below.</div>
         )}
       </div>
+
       {fileUrl && (
         <div className="file-preview mt-4 mb-4">
-          <h4>File Preview</h4>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <h4>
+              📄 File Preview {selectedFile?.name && <span style={{ fontWeight: "normal" }}>– "{selectedFile.name}"</span>}
+            </h4>
+            {chatStarted && (
+              <button
+                onClick={() => setFileExpanded(!fileExpanded)}
+                style={{ background: "none", border: "none", cursor: "pointer", padding: "4px" }}
+                title={fileExpanded ? "Collapse preview" : "Expand preview"}
+              >
+                {fileExpanded ? (
+                  <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                    <path d="M5 8L10 13L15 8" stroke="#0b5fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                ) : (
+                  <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                    <path d="M8 5L13 10L8 15" stroke="#0b5fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                )}
+              </button>
+            )}
+          </div>
 
-          {selectedFile?.type === "application/pdf" ? (
-            <iframe
-              src={fileUrl}
-              width="100%"
-              height="600px"
-              className="pdf-frame"
-              title="PDF Preview"
-            ></iframe>
-          ) : selectedFile?.type === "text/plain" ? (
-            <iframe
-              src={fileUrl}
-              width="100%"
-              height="600px"
-              className="pdf-frame"
-              title="PDF Preview"
-            ></iframe>
-
-          ) : selectedFile?.name.endsWith(".docx") ? (
-            <iframe
-              src={fileUrl}
-              width="100%"
-              height="600px"
-              className="pdf-frame"
-              title="PDF Preview"
-            ></iframe>
-          ) : (
-            <div className="alert alert-danger">Unsupported file type for preview.</div>
+          {fileExpanded && (
+            <div style={{ marginTop: "10px" }}>
+              {selectedFile?.type === "application/pdf" || selectedFile?.name.endsWith(".docx") ? (
+                <iframe src={fileUrl} width="100%" height="600px" className="pdf-frame" title="PDF Preview"></iframe>
+              ) : selectedFile?.type === "text/plain" ? (
+                <TextFilePreview file={selectedFile} />
+              ) : (
+                <div className="alert alert-danger">Unsupported file type for preview.</div>
+              )}
+            </div>
           )}
         </div>
       )}
@@ -217,15 +215,23 @@ const Summarizer = ({ addToHistory, resetChat, currentChat }) => {
               <ReactMarkdown key={index}>{point}</ReactMarkdown>
             ))}
           </div>
-
           <button className="btn btn-outline-primary mt-3" onClick={handleDownload}>
             Download Summary
           </button>
         </div>
       )}
+
+      {/* Chatbot component */}
+      <Chatbot
+        onFirstChat={() => {
+          setChatStarted(true);
+          setFileExpanded(false); // Collapse on first chat
+        }}
+      />
     </div>
   );
 };
+
 const TextFilePreview = ({ file }) => {
   const [content, setContent] = useState("");
 
@@ -241,6 +247,5 @@ const TextFilePreview = ({ file }) => {
     </pre>
   );
 };
-
 
 export default Summarizer;

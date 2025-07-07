@@ -10,69 +10,70 @@ router = APIRouter()
 summary_store = {}
 
 # ✅ Available Summarization Models
-AVAILABLE_MODELS = ["gemini",
-                    "bart",
-                    "t5-large",
-                    "t5-base",
-                    "t5-small"]  # Extend this list if needed
+AVAILABLE_MODELS = [
+    "gemini", "openai", "mistralai/mistral-7b-instruct",
+    "bart", "t5-large", "t5-base", "t5-small"
+]
+
+# ✅ Create one instance of the summarizer
+summarizer = DocumentSummarizer()
 
 @router.post("/summarize")
-async def summarize_document(file: UploadFile = File(...), model: str = "gemini"):
+async def summarize_document(model: str, file: UploadFile = File(...)):
     """
     Handles file upload and summarization.
-    User can select a model: 'gemini' (default) or 'openai'.
     """
     if model not in AVAILABLE_MODELS:
         raise HTTPException(status_code=400, detail=f"Invalid model. Choose from: {', '.join(AVAILABLE_MODELS)}")
 
-    file_extension = file.filename.split(".")[-1].lower()
-    if file_extension not in ["pdf", "docx"]:
-        raise HTTPException(status_code=400, detail="Unsupported file type. Use PDF or DOCX.")
+    ext = file.filename.split(".")[-1].lower()
+    if ext not in ["pdf", "docx", "txt"]:
+        raise HTTPException(status_code=400, detail="Unsupported file type. Use PDF, DOCX, or TXT.")
 
-    # ✅ Save uploaded file temporarily
-    with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file_extension}") as temp_file:
+    # ✅ Save uploaded file
+    with tempfile.NamedTemporaryFile(delete=False, suffix=f".{ext}") as temp_file:
         temp_file.write(await file.read())
-        temp_file_path = temp_file.name
-        print(f"✅ File saved at: {temp_file_path}")  # Debugging: Check file path
+        temp_path = temp_file.name
+        print(f"✅ Temp file created: {temp_path}")
 
-    # ✅ Extract text
-    text = DocumentSummarizer.extract_text_from_pdf(temp_file_path) if file_extension == "pdf" else DocumentSummarizer.extract_text_from_docx(temp_file_path)
-    
-    # ✅ Remove temporary file
-    os.remove(temp_file_path)
+    try:
+        # ✅ Extract text using instance method
+        text = summarizer.extract_text(temp_path)
+    finally:
+        os.remove(temp_path)
 
     if not text.strip():
-        raise HTTPException(status_code=400, detail="No text found in the uploaded document.")
+        raise HTTPException(status_code=400, detail="No readable text extracted from document.")
 
-    print(f"📄 Extracted Text:\n{text[:500]}")  # Debugging: Print first 500 characters
+    print(f"📄 Text Extracted (first 500 chars):\n{text[:500]}")
 
-    # ✅ Summarize extracted text using the selected model
-    if model == "gemini":
-        summary =  DocumentSummarizer.summarize_with_gemini(text)
-    elif model == "openai":
-        summary = summarize_with_openai(text)
+    # ✅ Use summarize_text to trigger all logic including extract_headings, format_summary
+    summary = summarizer.summarize_text(text, model_name=model, format_style="bullet")
 
-    print(f"📜 Generated Summary:\n{summary}")  # Debugging: Print summary in console
+    print(f"📜 Final Summary Output:\n{summary}")
 
-    # ✅ Store summary in backend storage
+    # ✅ Store and return summary
     summary_id = len(summary_store) + 1
     summary_store[summary_id] = {
         "file_name": file.filename,
         "model_used": model,
+        "summary": summary,
+        "created_at": os.path.getmtime(temp_path),
+        "document_text": text
+    }
+
+    return {
+        "summary_url": f"http://127.0.0.1:8000/get_summary/{summary_id}",
+        "model_used": model,
         "summary": summary
     }
 
-    # ✅ Generate Summary URL
-    summary_url = f"http://127.0.0.1:8000/get_summary/{summary_id}"
-    print(f"🔗 Summary available at: {summary_url}")  # Debugging: Print URL
-
-    return {"summary_url": summary_url, "model_used": model, "summary": summary}
-
-
 @router.get("/get_summary/{summary_id}")
 async def get_summary(summary_id: int):
-    """Retrieve stored summary by ID."""
+    """Fetch summary from in-memory store."""
     if summary_id not in summary_store:
         raise HTTPException(status_code=404, detail="Summary not found.")
-    
     return summary_store[summary_id]
+
+# Mount router
+app.include_router(router)

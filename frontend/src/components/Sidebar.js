@@ -10,6 +10,7 @@ function Sidebar({ chats, onNewChat, setCurrentChat }) {
 
   return (
     <div className="Sidebar">
+      {/* Static Sidebar Navigation */}
       <ul className="SidebarList">
         {SidebarData.map((val, key) => (
           <li
@@ -26,33 +27,50 @@ function Sidebar({ chats, onNewChat, setCurrentChat }) {
 
       {/* New Chat Button */}
       <div className="Newchat">
-        <Button variant="contained" color="primary" startIcon={<AddIcon />} fullWidth onClick={onNewChat}>
+        <Button
+          variant="contained"
+          color="primary"
+          startIcon={<AddIcon />}
+          fullWidth
+          onClick={onNewChat}
+        >
           New Chat
         </Button>
       </div>
 
-      {/* Display Chat History with File Names */}
+      {/* Chat History */}
       <div className="chat-history">
         <h4>Chat History</h4>
-        <ul className = "history-list">
+        <ul className="history-list">
           {chats.length === 0 ? (
-            <p className="history-name">No history available.</p>
-          ) : (
-            chats.map((chat, index) => (
-              <li key={index} onClick={() => setCurrentChat(chat)}>
-                {chat.file ? chat.file.name : "Untitled Chat"}
-              </li>
-            ))
-          )}
-        </ul>
+          <li className="history-name text-muted">No history available</li>
+        ) : (
+          chats.map((chat, index) => (
+            <li
+              key={chat.id || index}
+              className="history-name"
+              onClick={() => setCurrentChat(chat)}
+              style={{ cursor: "pointer" }}
+              title={chat.file?.name || `Untitled Chat ${index + 1}`}
+            >
+              {chat.file?.name || `Untitled Chat ${index + 1}`}
+            </li>
+          ))
+        )}
+      </ul>
+
+      <button className="btn btn-sm btn-outline-danger mt-2" onClick={() => {
+          localStorage.removeItem("chatHistory");
+          window.location.reload(); // or trigger a reset
+       }}
+      >
+  Clear History
+</button>
+
+
       </div>
     </div>
   );
-
-  
 }
-
-
-
 
 export default Sidebar;

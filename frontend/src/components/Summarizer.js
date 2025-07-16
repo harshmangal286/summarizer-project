@@ -15,7 +15,7 @@ const Summarizer = ({ addToHistory, resetChat, currentChat }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [showSummaryMsg, setShowSummaryMsg] = useState(false);
-  const [selectedModel, setSelectedModel] = useState("gemini");
+  const [selectedModel, setSelectedModel] = useState("Mistral");
   const [fileExpanded, setFileExpanded] = useState(true);
   const [chatStarted, setChatStarted] = useState(false);
 
@@ -218,16 +218,24 @@ const Summarizer = ({ addToHistory, resetChat, currentChat }) => {
           <button className="btn btn-outline-primary mt-3" onClick={handleDownload}>
             Download Summary
           </button>
+          <Chatbot
+            onFirstChat={() => {
+              setChatStarted(true);
+              setFileExpanded(false); // Collapse on first chat
+            }}
+          />
         </div>
       )}
 
-      {/* Chatbot component */}
-      <Chatbot
-        onFirstChat={() => {
-          setChatStarted(true);
-          setFileExpanded(false); // Collapse on first chat
-        }}
-      />
+      { /*Chatbot component*/}
+      {
+        // <Chatbot
+        //   onFirstChat={() => {
+        //     setChatStarted(true);
+        //     setFileExpanded(false); // Collapse on first chat
+        //   }}
+        // />
+      }
     </div>
   );
 };

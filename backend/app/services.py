@@ -19,9 +19,10 @@ from pdf2image import convert_from_path
 
 from PIL import Image
 import openai
+from sentence_transformers import SentenceTransformer, util
 
-# Ensure NLTK resources are available
-nltk.download("punkt", quiet=True)
+
+nltk.download("punkt_tab")
 
 # Configure logging with more detailed format
 logging.basicConfig(
@@ -80,6 +81,9 @@ class DocumentSummarizer:
         self.active_model = None
         # Configure API (with validation)
         self._configure_apis()
+        self.embedder = SentenceTransformer('all-MiniLM-L6-v2')
+        self.doc_chunks = []
+        self.doc_embeddings = []
 
     def _configure_apis(self):
         """Configure  APIs from environment variables."""
@@ -107,8 +111,8 @@ class DocumentSummarizer:
         # At the top of the class
         
 
-# Add this block after OpenAI setup:
-        self.openrouter_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+        openrouter_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+        self.openrouter_key = openrouter_key  # Ensure attribute is set
         if self.openrouter_key:
             try:
                 test_response = requests.post(
@@ -134,7 +138,8 @@ class DocumentSummarizer:
 
 
        
-        self.openai_key = os.getenv("OPENAI_API_KEY", "").strip()
+        openai_key = os.getenv("OPENAI_API_KEY", "").strip()
+        self.openai_key = openai_key  # Ensure attribute is set
         if self.openai_key:
             try:
                 openai.api_key = self.openai_key
@@ -346,8 +351,10 @@ class DocumentSummarizer:
     def split_text_smart(self, text: str, tokenizer: Any, max_tokens: int = 1024,
                          overlap: int = 100) -> List[str]:
         """Split text with sentence awareness and overlap between chunks."""
-        logger.info("Splitting text into manageable chunks with overlap.")
+        logger.info("🔪 Splitting text into manageable chunks with overlap.")
+
         if not text.strip():
+            logger.warning("⚠️ Input text is empty. Skipping split.")
             return []
 
         sentences = nltk.sent_tokenize(text)
@@ -355,12 +362,10 @@ class DocumentSummarizer:
         token_count = 0
 
         for sentence in sentences:
-            # Skip empty sentences
             if not sentence.strip():
                 continue
 
-            sentence_tokens = len(tokenizer.encode(
-                sentence, add_special_tokens=False))
+            sentence_tokens = len(tokenizer.encode(sentence, add_special_tokens=False))
 
             if token_count + sentence_tokens <= max_tokens:
                 current_chunk.append(sentence)
@@ -368,21 +373,18 @@ class DocumentSummarizer:
             else:
                 chunks.append(" ".join(current_chunk))
 
-                # Add overlap by keeping some sentences from the previous chunk
+                # Prepare overlap
                 overlap_sentences = []
                 overlap_tokens = 0
-
-                # Add sentences from the end of previous chunk until we reach overlap limit
                 for s in reversed(current_chunk):
-                    s_tokens = len(tokenizer.encode(
-                        s, add_special_tokens=False))
+                    s_tokens = len(tokenizer.encode(s, add_special_tokens=False))
                     if overlap_tokens + s_tokens <= overlap:
                         overlap_sentences.insert(0, s)
                         overlap_tokens += s_tokens
                     else:
                         break
 
-                # Start a new chunk with overlap sentences plus current sentence
+                # New chunk begins
                 current_chunk = overlap_sentences + [sentence]
                 token_count = overlap_tokens + sentence_tokens
 
@@ -636,8 +638,103 @@ class DocumentSummarizer:
             return self.summarize_text(combined_summary, model_name, format_style)
 
         return self.format_summary(combined_summary, format_style)
+    def build_knowledge_base(self, text: str):
+        """Split text and build in-memory vector index"""
+        logger.info(f"📄 Document length: {len(text)}")
+
+        # Smart fallback for very short documents
+        if len(text.strip().split()) < 50:
+            self.doc_chunks = [text.strip()]
+        else:
+            self.doc_chunks = self.split_text_smart(text, self.embedder, max_tokens=150)
+
+        if not self.doc_chunks:
+            logger.warning("⚠️ No chunks were created. Falling back to full text as one chunk.")
+            self.doc_chunks = [text.strip()]
+
+        logger.info(f"📦 Chunks created: {len(self.doc_chunks)}")
+
+        # Create vector embeddings for chunks
+        self.doc_embeddings = self.embedder.encode(self.doc_chunks, convert_to_tensor=True)
+        logger.info(f"✅ Knowledge base created with {len(self.doc_chunks)} chunks.")
 
 
+    def retrieve_relevant_chunks(self, query: str, top_k=3) -> List[str]:
+        """Return top-k relevant chunks for the query"""
+        if not self.doc_chunks:
+            return []
+
+        query_embedding = self.embedder.encode(query, convert_to_tensor=True)
+        hits = util.semantic_search(query_embedding, self.doc_embeddings, top_k=top_k)
+        top_chunks = [self.doc_chunks[hit['corpus_id']] for hit in hits[0]]
+        return top_chunks
+    def answer_question(self, question: str, model_name: str = "openrouter:mistral") -> str:
+        """Answer question using retrieved context and chosen model"""
+        context_chunks = self.retrieve_relevant_chunks(question, top_k=3)
+        context = "\n\n".join(context_chunks)
+
+        prompt = (
+                "Use the following context to answer the question.\n\n"
+                f"Context:\n{context}\n\n"
+                f"Question: {question}\n"
+                "Answer:"
+            )
+
+        if model_name == "gemini" and self.gemini_available:
+                try:
+                    model = genai.GenerativeModel("gemini-1.5-pro")
+                    response = model.generate_content(prompt)
+                    return response.text.strip()
+                except Exception as e:
+                    return f"Gemini QA error: {e}"
+
+        elif model_name == "openai" and self.openai_available:
+                try:
+                    client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))  # or use global
+                    response = client.chat.completions.create(
+                        model="gpt-3.5-turbo",
+                        messages=[
+                            {"role": "system", "content": "You are a helpful assistant."},
+                            {"role": "user", "content": prompt}
+                        ]
+                    )
+                    return response.choices[0].message.content.strip()
+                except Exception as e:
+                    return f"OpenAI QA error: {e}"
+        elif model_name.startswith("openrouter") or model_name == "mistralai/mistral-7b-instruct":
+            import requests
+            openrouter_key = os.getenv("OPENROUTER_API_KEY")
+
+            if not openrouter_key:
+                return "OpenRouter API key not configured."
+
+            try:
+                headers = {
+                    "Authorization": f"Bearer {openrouter_key}",
+                    "Content-Type": "application/json"
+                }
+
+                payload = {
+                    "model": "mistralai/mistral-7b-instruct",  # or another OpenRouter-supported model
+                    "messages": [
+                        {"role": "system", "content": "You are a helpful assistant that answers based on provided context."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    "temperature": 0.7
+                }
+
+                response = requests.post("https://openrouter.ai/api/v1/chat/completions",
+                                        headers=headers, json=payload)
+
+                data = response.json()
+                return data["choices"][0]["message"]["content"].strip()
+
+            except Exception as e:
+                return f"OpenRouter QA error: {e}"
+
+        return "No available model to answer the question."
+
+ 
 def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description="Document Summarization Tool")

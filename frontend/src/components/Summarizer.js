@@ -15,7 +15,7 @@ const Summarizer = ({ addToHistory, resetChat, currentChat }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [showSummaryMsg, setShowSummaryMsg] = useState(false);
-  const [selectedModel, setSelectedModel] = useState("Mistral");
+  const [selectedModel, setSelectedModel] = useState("gemini");
   const [fileExpanded, setFileExpanded] = useState(true);
   const [chatStarted, setChatStarted] = useState(false);
 

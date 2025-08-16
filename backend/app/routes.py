@@ -1,3 +1,4 @@
+from pydantic import BaseModel
 from fastapi import FastAPI, APIRouter, UploadFile, File, HTTPException
 import tempfile
 import os
@@ -18,17 +19,20 @@ AVAILABLE_MODELS = [
 # ✅ Create one instance of the summarizer
 summarizer = DocumentSummarizer()
 
+
 @router.post("/summarize")
 async def summarize_document(model: str, file: UploadFile = File(...)):
     """
     Handles file upload and summarization.
     """
     if model not in AVAILABLE_MODELS:
-        raise HTTPException(status_code=400, detail=f"Invalid model. Choose from: {', '.join(AVAILABLE_MODELS)}")
+        raise HTTPException(
+            status_code=400, detail=f"Invalid model. Choose from: {', '.join(AVAILABLE_MODELS)}")
 
     ext = file.filename.split(".")[-1].lower()
     if ext not in ["pdf", "docx", "txt"]:
-        raise HTTPException(status_code=400, detail="Unsupported file type. Use PDF, DOCX, or TXT.")
+        raise HTTPException(
+            status_code=400, detail="Unsupported file type. Use PDF, DOCX, or TXT.")
 
     # ✅ Save uploaded file
     with tempfile.NamedTemporaryFile(delete=False, suffix=f".{ext}") as temp_file:
@@ -43,12 +47,14 @@ async def summarize_document(model: str, file: UploadFile = File(...)):
         os.remove(temp_path)
 
     if not text.strip():
-        raise HTTPException(status_code=400, detail="No readable text extracted from document.")
+        raise HTTPException(
+            status_code=400, detail="No readable text extracted from document.")
 
     print(f"📄 Text Extracted (first 500 chars):\n{text[:500]}")
 
     # ✅ Use summarize_text to trigger all logic including extract_headings, format_summary
-    summary = summarizer.summarize_text(text, model_name=model, format_style="bullet")
+    summary = summarizer.summarize_text(
+        text, model_name=model, format_style="bullet")
 
     print(f"📜 Final Summary Output:\n{summary}")
 
@@ -68,12 +74,33 @@ async def summarize_document(model: str, file: UploadFile = File(...)):
         "summary": summary
     }
 
+
 @router.get("/get_summary/{summary_id}")
 async def get_summary(summary_id: int):
     """Fetch summary from in-memory store."""
     if summary_id not in summary_store:
         raise HTTPException(status_code=404, detail="Summary not found.")
     return summary_store[summary_id]
+
+
+class ChatRequest(BaseModel):
+    question: str
+    summary_id: int
+    model: str = "mistralai/mistral-7b-instruct"
+
+
+@router.post("/chat")
+async def chat_with_summary(question: str, summary_id: int, model: str = "mistralai/mistral-7b-instruct"):
+    if summary_id not in summary_store:
+        raise HTTPException(status_code=404, detail="Summary not found.")
+
+    document_text = summary_store[summary_id]["document_text"]
+
+    # Example logic (you'd replace this with your actual QnA implementation)
+    answer = summarizer.answer_question(document_text, question)
+
+    return {"question": question, "answer": answer}
+
 
 # Mount router
 app.include_router(router)

@@ -1,7 +1,7 @@
 # Placeholder for additional imports or code
 import os
 import re
-import fitz  # PyMuPDF
+import fitz  # PyMuPDF for PDF handling
 import docx
 import logging
 import nltk

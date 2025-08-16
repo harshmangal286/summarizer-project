@@ -1,1 +1,10 @@
-node_modules
+# Python
+*.pyc
+__pycache__/
+.env
+
+# Node.js
+node_modules/
+npm-debug.log
+yarn-error.log
+pnpm-debug.log

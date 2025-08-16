@@ -1,3 +1,4 @@
+from fastapi import Request
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from app.services import DocumentSummarizer
@@ -14,8 +15,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"]
 )
-# Global instance (reused across routes)
-summarizer = DocumentSummarizer()
 
 @app.post("/summarize")
 async def summarize_file(
@@ -26,8 +25,9 @@ async def summarize_file(
     file_type = file.filename.split(".")[-1].lower()
 
     if file_type not in ["pdf", "docx", "txt"]:
-        raise HTTPException(status_code=400, detail="Unsupported file format. Please upload a PDF, DOCX, or TXT.")
-    
+        raise HTTPException(
+            status_code=400, detail="Unsupported file format. Please upload a PDF, DOCX, or TXT.")
+
     with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file_type}") as temp_file:
         temp_file.write(await file.read())
         
@@ -35,8 +35,7 @@ async def summarize_file(
 
     try:
         # 🔑 Instantiate summarizer with API key
-        global summarizer 
-        
+        summarizer = DocumentSummarizer()
 
 
         # 🧠 Extract text
@@ -49,18 +48,19 @@ async def summarize_file(
 
         if not text.strip():
             raise HTTPException(status_code=400, detail="No text found in the document.")
-        
-        summarizer.build_knowledge_base(text)
 
         # 🪄 Summarize
         if model == "gemini":
-            summary = summarizer.summarize_with_gemini(text)#, summary_length=summary_length
+            summary = summarizer.summarize_with_gemini(
+                text)  # , summary_length=summary_length
         elif model == "openai":
+           
             summary = summarizer.summarize_with_openai(text )#,summary_length=summary_length
         elif model == "mistralai/mistral-7b-instruct":
             summary = summarizer.summarize_with_openrouter(text)
         else:
-            raise HTTPException(status_code=400, detail="Invalid model. Choose 'gemini' or 'openai'.")
+            raise HTTPException(
+                status_code=400, detail="Invalid model. Choose 'gemini' or 'openai'.")
 
         print(f"📜 Generated Summary:\n{summary}")
         return {"summary": summary}
@@ -70,27 +70,3 @@ async def summarize_file(
         print(f"✅ Temporary file removed: {temp_file_path}")
 
 app.include_router(router)
-from fastapi import Request
-@app.post("/chat")
-async def chat_with_doc(request: Request):
-    body = await request.json()
-    question = body.get("question")
-    model = body.get("model", "mistralai/mistral-7b-instruct")
-
-    global summarizer
-
-    if not summarizer.doc_chunks:
-        print("❌ No document chunks found.")
-        return {"error": "Please upload and process a document first."}
-
-    print(f"📥 Question received: {question}")
-    print(f"📚 Using model: {model}")
-
-    try:
-        answer = summarizer.answer_question(question, model)
-        print(f"✅ Model answer: {answer}")
-        return {"answer": answer}
-    except Exception as e:
-        print(f"❌ Error answering question: {e}")
-        return {"error": "Failed to get answer from model."}
-

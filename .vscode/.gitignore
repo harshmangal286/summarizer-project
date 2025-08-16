@@ -1,0 +1,7 @@
+frontend/node_modules/.cache/
+node_modules/
+.cache/
+*.pack
+*.dll
+*.lib
+venv/

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import axios from "axios";
 
 const Chatbot = ({ onFirstChat }) => {
@@ -6,6 +6,7 @@ const Chatbot = ({ onFirstChat }) => {
   const [messages, setMessages] = useState([]);
   const [pendingFile, setPendingFile] = useState(null);
   const [firstMessageSent, setFirstMessageSent] = useState(false);
+  const fileInputRef = useRef(null);
 
 
   const handleSend = async () => {
@@ -27,41 +28,38 @@ const Chatbot = ({ onFirstChat }) => {
 
     try {
       const formData = new FormData();
-      formData.append("question", input.trim());
-      formData.append("model", "mistralai/mistral-7b-instruct");
-
-      if (pendingFile?.file) {
-        formData.append("file", pendingFile.file, pendingFile.file.name);
+      formData.append("question", newMessage.text || "");
+      if (pendingFile) {
+        formData.append("file", pendingFile, pendingFile.name);
       }
 
-      console.log("Request payload:", formData);
-
-      const res = await axios.post("http://127.0.0.1:8000/summarize", formData, {
+      const res = await axios.post("http://127.0.0.1:8000/chat", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
-
-      console.log("Response:", res);
 
       // Add bot response to messages
       const botMessage = {
         sender: "bot",
-        text: res.data.choices?.[0]?.message?.content
-          ? res.data.choices?.[0]?.message?.content
-          : res.data.error
-            ? "Error: " + res.data.error
-            : "Oops! Something went wrong.",
+        text:
+          (res?.data && (res.data.answer || (res.data.choices?.[0]?.message?.content))) ||
+          (res?.data?.error ? `Error: ${res.data.error}` : "Oops! Something went wrong."),
       };
       setMessages((prev) => [...prev, botMessage]);
+
+      // Reset file selection so user can upload again
+      setPendingFile(null);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
     } catch (error) {
       console.error("Error:", error);
     }
   };
 
   const handleFileChange = (e) => {
-    if (e.target.files[0]) {
-      setPendingFile({ file: e.target.files[0] });
+    if (e.target.files && e.target.files[0]) {
+      setPendingFile(e.target.files[0]);
     }
-
   };
 
   return (
@@ -84,7 +82,7 @@ const Chatbot = ({ onFirstChat }) => {
           placeholder="Ask a question..."
           onChange={(e) => setInput(e.target.value)}
         />
-        <input type="file" id="chat-file" onChange={handleFileChange} />
+        <input type="file" id="chat-file" ref={fileInputRef} onChange={handleFileChange} />
         <button className="btn btn-primary" onClick={handleSend}>
           Send
         </button>

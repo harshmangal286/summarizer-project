@@ -19,7 +19,7 @@ summarizer = DocumentSummarizer()
 
 
 @router.post("/summarize")
-async def summarize_document(model: str, file: UploadFile = File(...)):
+async def summarize_document(model: str = Form(...), file: UploadFile = File(...)):
     """
     Handles file upload and summarization.
     """
@@ -86,15 +86,29 @@ async def chat_endpoint(
     file: UploadFile = File(None)
 ):
     try:
-        # If user attached a file, read its text and load into summarizer
         if file:
             file_bytes = await file.read()
             summarizer.load_document(file_bytes, file.filename)
 
-        # Call your QA method
-        answer = summarizer.answer_question(question)
+        raw_answer = summarizer.answer_question(question)
 
-        return {"choices": [{"message": {"content": answer}}]}
+        # Normalize answer to a string in case the underlying service returned a dict
+        answer_text = None
+        if isinstance(raw_answer, str):
+            answer_text = raw_answer
+        elif isinstance(raw_answer, dict):
+            try:
+                answer_text = (
+                    raw_answer.get("choices", [{}])[0]
+                    .get("message", {})
+                    .get("content")
+                )
+            except Exception:
+                answer_text = None
+        if not answer_text:
+            answer_text = "No answer generated."
+
+        return {"answer": answer_text}
 
     except Exception as e:
         return {"error": str(e)}

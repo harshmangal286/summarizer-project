@@ -1,59 +1,94 @@
-import React, { useState } from 'react';
+import React, { useState } from "react";
+import axios from "axios";
 
-const Chatbot = ({ context }) => {
-  const [question, setQuestion] = useState('');
-  const [answer, setAnswer] = useState('');
-  const [loading, setLoading] = useState(false);
+const Chatbot = ({ onFirstChat }) => {
+  const [input, setInput] = useState("");
+  const [messages, setMessages] = useState([]);
+  const [pendingFile, setPendingFile] = useState(null);
+  const [firstMessageSent, setFirstMessageSent] = useState(false);
 
-  const handleAsk = async () => {
-    if (!question.trim()) return;
 
-    setLoading(true);
-    setAnswer('');
+  const handleSend = async () => {
+    if (!input.trim() && !pendingFile) return;
+
+    // Add user message
+    const newMessage = {
+      sender: "user",
+      text: input.trim(),
+      file: pendingFile || null,
+    };
+    setMessages((prev) => [...prev, newMessage]);
+    setInput("");
+
+    if (!firstMessageSent) {
+      setFirstMessageSent(true);
+      onFirstChat?.();
+    }
 
     try {
-      const res = await fetch('http://localhost:8000/chat', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          question,
-          context, // full document text or summary
-          
-        }),
+      const formData = new FormData();
+      formData.append("question", input.trim());
+      formData.append("model", "mistralai/mistral-7b-instruct");
+
+      if (pendingFile?.file) {
+        formData.append("file", pendingFile.file, pendingFile.file.name);
+      }
+
+      console.log("Request payload:", formData);
+
+      const res = await axios.post("http://127.0.0.1:8000/summarize", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
       });
 
-      const data = await res.json();
-      setAnswer(data.answer || 'No response from model.');
-    } catch (err) {
-      console.error(err);
-      setAnswer('Error reaching the server.');
-    } finally {
-      setLoading(false);
+      console.log("Response:", res);
+
+      // Add bot response to messages
+      const botMessage = {
+        sender: "bot",
+        text: res.data.choices?.[0]?.message?.content
+          ? res.data.choices?.[0]?.message?.content
+          : res.data.error
+            ? "Error: " + res.data.error
+            : "Oops! Something went wrong.",
+      };
+      setMessages((prev) => [...prev, botMessage]);
+    } catch (error) {
+      console.error("Error:", error);
     }
   };
 
-  return (
-    <div className="chat-container">
-      <h2>💬 Ask a Question About the Document</h2>
-      <textarea
-        rows={3}
-        placeholder="Type your question..."
-        value={question}
-        onChange={(e) => setQuestion(e.target.value)}
-        style={{ width: '100%', marginBottom: '10px' }}
-      />
-      <button onClick={handleAsk} disabled={loading}>
-        {loading ? 'Asking...' : 'Ask'}
-      </button>
+  const handleFileChange = (e) => {
+    if (e.target.files[0]) {
+      setPendingFile({ file: e.target.files[0] });
+    }
 
-      {answer && (
-        <div style={{ marginTop: '20px' }}>
-          <strong>Answer:</strong>
-          <p>{answer}</p>
-        </div>
-      )}
+  };
+
+  return (
+    <div className="chatbot-container mt-4">
+      <h5>Chat with Document</h5>
+      <div className="chat-messages border rounded p-3 mb-2" style={{ height: "300px", overflowY: "auto" }}>
+        {messages.map((msg, idx) => (
+          <div key={idx} className={`chat-message ${msg.sender}`}>
+            <strong>{msg.sender === "user" ? "You" : "Bot"}:</strong> {msg.text}
+            {msg.file && <div>📎 {msg.file.name}</div>}
+          </div>
+        ))}
+      </div>
+
+      <div className="chat-input d-flex gap-2">
+        <input
+          type="text"
+          value={input}
+          className="form-control"
+          placeholder="Ask a question..."
+          onChange={(e) => setInput(e.target.value)}
+        />
+        <input type="file" id="chat-file" onChange={handleFileChange} />
+        <button className="btn btn-primary" onClick={handleSend}>
+          Send
+        </button>
+      </div>
     </div>
   );
 };

@@ -8,7 +8,7 @@ import nltk
 import torch
 import concurrent.futures
 import argparse
-from typing import Dict, List, Optional, Union, Any
+from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 from dotenv import load_dotenv
@@ -16,8 +16,7 @@ import google.generativeai as genai
 import requests
 import pytesseract
 from pdf2image import convert_from_path
-
-from PIL import Image
+import tempfile
 import openai
 from sentence_transformers import SentenceTransformer, util
 
@@ -84,6 +83,20 @@ class DocumentSummarizer:
         self.embedder = SentenceTransformer('all-MiniLM-L6-v2')
         self.doc_chunks = []
         self.doc_embeddings = []
+
+    def load_document(self, file_bytes: bytes, filename: str):
+        """Load a document from bytes and build the knowledge base."""
+        ext = filename.split(".")[-1].lower()
+        with tempfile.NamedTemporaryFile(delete=False, suffix=f".{ext}") as temp_file:
+            temp_file.write(file_bytes)
+            temp_path = temp_file.name
+
+        try:
+            text = self.extract_text(temp_path)
+            if text:
+                self.build_knowledge_base(text)
+        finally:
+            os.remove(temp_path)
 
     def _configure_apis(self):
         """Configure  APIs from environment variables."""
@@ -320,7 +333,7 @@ class DocumentSummarizer:
                 return ""
 
         logger.error(
-            f"Could not decode file with any of the attempted encodings")
+            "Could not decode file with any of the attempted encodings")
         return ""
 
     def process_documents(self, files: List[str]) -> Dict[str, str]:
@@ -469,7 +482,6 @@ class DocumentSummarizer:
         """Generate summary using OpenAI GPT with improved prompting."""
         logger.info("Summarizing text with OpenAI API.")
         from openai import OpenAI
-        import os
         
         client = OpenAI(api_key=self.openai_key)
 
@@ -510,7 +522,7 @@ class DocumentSummarizer:
         if not model_to_use:
             return "❌ No model available. Please configure Gemini, OpenAI, or OpenRouter."
 
-        if model_to_use == "openrouter":
+        if model_to_use == "openrouter" or model_to_use == "mistralai/mistral-7b-instruct":
             if not self.openrouter_available:
                 return "OpenRouter API not available."
             return self.format_summary(self.summarize_with_openrouter(text), style=format_style)
@@ -668,7 +680,7 @@ class DocumentSummarizer:
         hits = util.semantic_search(query_embedding, self.doc_embeddings, top_k=top_k)
         top_chunks = [self.doc_chunks[hit['corpus_id']] for hit in hits[0]]
         return top_chunks
-    def answer_question(self, question: str, model_name: str = "openrouter:mistral") -> str:
+    def answer_question(self, question: str, model_name: str = "openrouter") -> str:
         """Answer question using retrieved context and chosen model"""
         context_chunks = self.retrieve_relevant_chunks(question, top_k=3)
         context = "\n\n".join(context_chunks)
@@ -701,7 +713,7 @@ class DocumentSummarizer:
                     return response.choices[0].message.content.strip()
                 except Exception as e:
                     return f"OpenAI QA error: {e}"
-        elif model_name.startswith("openrouter") or model_name == "mistralai/mistral-7b-instruct":
+        elif model_name == "openrouter" or model_name == "mistralai/mistral-7b-instruct":
             import requests
             openrouter_key = os.getenv("OPENROUTER_API_KEY")
 
@@ -727,7 +739,7 @@ class DocumentSummarizer:
                                         headers=headers, json=payload)
 
                 data = response.json()
-                return data["choices"][0]["message"]["content"].strip()
+                return data
 
             except Exception as e:
                 return f"OpenRouter QA error: {e}"
@@ -802,7 +814,7 @@ def main():
         for file_path, summary in results.items():
             print(f"\n{'='*50}")
             print(f"SUMMARY OF: {os.path.basename(file_path)}")
-            print(f"{'='*50}\n")
+            print(f"{ '='*50}\n")
             print(summary)
             print("\n")
 

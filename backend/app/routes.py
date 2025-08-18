@@ -1,10 +1,8 @@
-from pydantic import BaseModel
-from fastapi import FastAPI, APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, UploadFile, File, HTTPException, Form
 import tempfile
 import os
 from app.services import DocumentSummarizer
 
-app = FastAPI()
 router = APIRouter()
 
 # ✅ Backend Storage for Summaries
@@ -64,7 +62,6 @@ async def summarize_document(model: str, file: UploadFile = File(...)):
         "file_name": file.filename,
         "model_used": model,
         "summary": summary,
-        "created_at": os.path.getmtime(temp_path),
         "document_text": text
     }
 
@@ -83,24 +80,21 @@ async def get_summary(summary_id: int):
     return summary_store[summary_id]
 
 
-class ChatRequest(BaseModel):
-    question: str
-    summary_id: int
-    model: str = "mistralai/mistral-7b-instruct"
-
-
 @router.post("/chat")
-async def chat_with_summary(question: str, summary_id: int, model: str = "mistralai/mistral-7b-instruct"):
-    if summary_id not in summary_store:
-        raise HTTPException(status_code=404, detail="Summary not found.")
+async def chat_endpoint(
+    question: str = Form(...),
+    file: UploadFile = File(None)
+):
+    try:
+        # If user attached a file, read its text and load into summarizer
+        if file:
+            file_bytes = await file.read()
+            summarizer.load_document(file_bytes, file.filename)
 
-    document_text = summary_store[summary_id]["document_text"]
+        # Call your QA method
+        answer = summarizer.answer_question(question)
 
-    # Example logic (you'd replace this with your actual QnA implementation)
-    answer = summarizer.answer_question(document_text, question)
+        return {"choices": [{"message": {"content": answer}}]}
 
-    return {"question": question, "answer": answer}
-
-
-# Mount router
-app.include_router(router)
+    except Exception as e:
+        return {"error": str(e)}

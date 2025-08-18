@@ -15,9 +15,9 @@ const Summarizer = ({ addToHistory, resetChat, currentChat }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [showSummaryMsg, setShowSummaryMsg] = useState(false);
-  const [selectedModel, setSelectedModel] = useState("gemini");
   const [fileExpanded, setFileExpanded] = useState(true);
   const [chatStarted, setChatStarted] = useState(false);
+  const [selectedModel] = useState("gemini");
 
   // Cleanup URL on unmount
   useEffect(() => {
@@ -221,9 +221,10 @@ const Summarizer = ({ addToHistory, resetChat, currentChat }) => {
           <Chatbot
             onFirstChat={() => {
               setChatStarted(true);
-              setFileExpanded(false); // Collapse on first chat
+              setFileExpanded(false); // Collapse preview on first chat
             }}
           />
+
         </div>
       )}
 

@@ -4,19 +4,19 @@ import axios from "axios";
 const Chatbot = ({ onFirstChat }) => {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState([]);
-  const [pendingFile, setPendingFile] = useState(null);
+  // const [pendingFile, setPendingFile] = useState(null);
   const [firstMessageSent, setFirstMessageSent] = useState(false);
-  const fileInputRef = useRef(null);
+  // const fileInputRef = useRef(null);
 
 
   const handleSend = async () => {
-    if (!input.trim() && !pendingFile) return;
+    // if (!input.trim() && !pendingFile) return;
 
     // Add user message
     const newMessage = {
       sender: "user",
       text: input.trim(),
-      file: pendingFile || null,
+      // file: pendingFile || null,
     };
     setMessages((prev) => [...prev, newMessage]);
     setInput("");
@@ -29,9 +29,9 @@ const Chatbot = ({ onFirstChat }) => {
     try {
       const formData = new FormData();
       formData.append("question", newMessage.text || "");
-      if (pendingFile) {
-        formData.append("file", pendingFile, pendingFile.name);
-      }
+      // if (pendingFile) {
+      //   formData.append("file", pendingFile, pendingFile.name);
+      // }
 
       const res = await axios.post("http://127.0.0.1:8000/chat", formData, {
         headers: { "Content-Type": "multipart/form-data" },
@@ -47,20 +47,20 @@ const Chatbot = ({ onFirstChat }) => {
       setMessages((prev) => [...prev, botMessage]);
 
       // Reset file selection so user can upload again
-      setPendingFile(null);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
+      // setPendingFile(null);
+      // if (fileInputRef.current) {
+      //   fileInputRef.current.value = "";
+      // }
     } catch (error) {
       console.error("Error:", error);
     }
   };
 
-  const handleFileChange = (e) => {
-    if (e.target.files && e.target.files[0]) {
-      setPendingFile(e.target.files[0]);
-    }
-  };
+  // const handleFileChange = (e) => {
+  //   if (e.target.files && e.target.files[0]) {
+  //     setPendingFile(e.target.files[0]);
+  //   }
+  // };
 
   return (
     <div className="chatbot-container mt-4">
@@ -69,7 +69,7 @@ const Chatbot = ({ onFirstChat }) => {
         {messages.map((msg, idx) => (
           <div key={idx} className={`chat-message ${msg.sender}`}>
             <strong>{msg.sender === "user" ? "You" : "Bot"}:</strong> {msg.text}
-            {msg.file && <div>📎 {msg.file.name}</div>}
+            {/* {msg.file && <div>📎 {msg.file.name}</div>} */}
           </div>
         ))}
       </div>
@@ -82,7 +82,7 @@ const Chatbot = ({ onFirstChat }) => {
           placeholder="Ask a question..."
           onChange={(e) => setInput(e.target.value)}
         />
-        <input type="file" id="chat-file" ref={fileInputRef} onChange={handleFileChange} />
+        {/* <input type="file" id="chat-file" ref={fileInputRef} onChange={handleFileChange} /> */}
         <button className="btn btn-primary" onClick={handleSend}>
           Send
         </button>

@@ -1,4 +1,3 @@
-# Placeholder for additional imports or code
 import os
 import re
 import fitz  # PyMuPDF for PDF handling
@@ -19,7 +18,7 @@ from pdf2image import convert_from_path
 import tempfile
 import openai
 from sentence_transformers import SentenceTransformer, util
-
+import tiktoken
 
 nltk.download("punkt_tab")
 
@@ -54,7 +53,6 @@ MODEL_CONFIGS = {
     "gemini": ModelConfig(model_id="google/gemini-1.5-pro", max_input_length=8192),
     "openai": ModelConfig(model_id="gpt-3.5-turbo", max_input_length=4096),
     "openrouter": ModelConfig(model_id="mistralai/mistral-7b-instruct", max_input_length=4096)
-
 }
 
 # Heading categories to extract (configurable)
@@ -78,6 +76,12 @@ class DocumentSummarizer:
         self.tokenizers = {}
         self.models_loaded = {}
         self.active_model = None
+        
+        # Initialize API keys
+        self.gemini_key = None
+        self.openai_key = None
+        self.openrouter_key = None
+        
         # Configure API (with validation)
         self._configure_apis()
         self.embedder = SentenceTransformer('all-MiniLM-L6-v2')
@@ -99,8 +103,7 @@ class DocumentSummarizer:
             os.remove(temp_path)
 
     def _configure_apis(self):
-        """Configure  APIs from environment variables."""
-
+        """Configure APIs from environment variables."""
         load_dotenv()
 
         self.gemini_available = False
@@ -108,11 +111,17 @@ class DocumentSummarizer:
         self.openrouter_available = False
         self.active_model = None
 
+        # Initialize tokenizers for local models
+        self.tokenizers = {
+            'openai': tiktoken.get_encoding("cl100k_base"),
+            # Add other local models if needed
+        }
+
         # 🧠 Try Gemini First
-        gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
-        if gemini_key:
+        self.gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
+        if self.gemini_key:
             try:
-                genai.configure(api_key=gemini_key)
+                genai.configure(api_key=self.gemini_key)
                 model = genai.GenerativeModel("gemini-1.5-pro")
                 test_response = model.generate_content("Ping")
                 if test_response:
@@ -121,11 +130,9 @@ class DocumentSummarizer:
                     logger.info("✅ Gemini API successfully configured.")
             except Exception as e:
                 logger.warning(f"❌ Gemini config failed: {e}")
-        # At the top of the class
-        
 
-        openrouter_key = os.getenv("OPENROUTER_API_KEY", "").strip()
-        self.openrouter_key = openrouter_key  # Ensure attribute is set
+        # Try OpenRouter
+        self.openrouter_key = os.getenv("OPENROUTER_API_KEY", "").strip()
         if self.openrouter_key:
             try:
                 test_response = requests.post(
@@ -139,7 +146,8 @@ class DocumentSummarizer:
                     json={
                         "model": "mistralai/mistral-7b-instruct",
                         "messages": [{"role": "user", "content": "Ping"}]
-                    }
+                    },
+                    timeout=10
                 )
                 if test_response.ok:
                     self.openrouter_available = True
@@ -149,10 +157,8 @@ class DocumentSummarizer:
             except Exception as e:
                 logger.warning(f"❌ OpenRouter config failed: {e}")
 
-
-       
-        openai_key = os.getenv("OPENAI_API_KEY", "").strip()
-        self.openai_key = openai_key  # Ensure attribute is set
+        # Try OpenAI
+        self.openai_key = os.getenv("OPENAI_API_KEY", "").strip()
         if self.openai_key:
             try:
                 openai.api_key = self.openai_key
@@ -175,7 +181,7 @@ class DocumentSummarizer:
                 f"Invalid model name: {model_name}. Available: {', '.join(MODEL_CONFIGS.keys())}")
             return False
 
-        # For Gemini or OpenAI – no need to load local models
+        # For API-based models – no need to load locally
         if model_name == "gemini":
             if not self.gemini_available:
                 logger.error("❌ Gemini API is not available or not configured")
@@ -189,19 +195,20 @@ class DocumentSummarizer:
                 return False
             logger.info("✅ OpenAI model selected – no loading needed")
             return True
+
         if model_name == "openrouter":
             if not self.openrouter_available:
                 logger.error("❌ OpenRouter API is not available or not configured")
                 return False
             logger.info("✅ OpenRouter model selected – no loading needed")
             return True
-        # For local models like BART, T5, etc.
+
+        # HuggingFace models only
         if model_name not in self.tokenizers or model_name not in self.models_loaded:
             try:
                 logger.info(f"🔄 Loading HuggingFace model: {model_name}")
                 model_config = MODEL_CONFIGS[model_name]
-                self.tokenizers[model_name] = AutoTokenizer.from_pretrained(
-                    model_config.model_id)
+                self.tokenizers[model_name] = AutoTokenizer.from_pretrained(model_config.model_id)
                 self.models_loaded[model_name] = AutoModelForSeq2SeqLM.from_pretrained(
                     model_config.model_id
                 ).to(self.device)
@@ -253,11 +260,11 @@ class DocumentSummarizer:
 
         try:
             if ext == ".pdf":
-                return self._extract_text_from_pdf(file_path)
+                return self.extract_text_from_pdf(file_path)
             elif ext == ".docx":
-                return self._extract_text_from_docx(file_path)
+                return self.extract_text_from_docx(file_path)
             elif ext == ".txt":
-                return self._extract_text_from_txt(file_path)
+                return self.extract_text_from_txt(file_path)
             else:
                 logger.error(f"Unsupported file format: {ext}")
                 return ""
@@ -290,7 +297,6 @@ class DocumentSummarizer:
                                 ocr_text = pytesseract.image_to_string(
                                     bw_img) + "\n"
                                 text_chunks.append(ocr_text)
-                                return text_chunks
                     except Exception as e:
                         logger.warning(
                             f"Failed to extract text from page {page_num}: {e}")
@@ -338,8 +344,7 @@ class DocumentSummarizer:
 
     def process_documents(self, files: List[str]) -> Dict[str, str]:
         logger.info("Processing multiple documents in parallel.")
-        """Process multiple documents with parallel 
-        execution."""
+        """Process multiple documents with parallel execution."""
         if not files:
             logger.warning("No files provided for processing")
             return {}
@@ -405,6 +410,7 @@ class DocumentSummarizer:
             chunks.append(" ".join(current_chunk))
 
         return chunks
+
     def summarize_with_openrouter(self, text: str) -> str:
         """Generate summary using OpenRouter with improved prompting."""
         logger.info("Summarizing text with OpenRouter API.")
@@ -416,12 +422,9 @@ class DocumentSummarizer:
                 "Provide a comprehensive summary of the following document. "
                 "Focus on key facts, findings, and conclusions. "
                 "Organize the summary in a clear structure. "
-                "Keep the Headings bold style. "
                 "Use bullet points for clarity. "
                 "Use a formal tone. "
-                "keep the headings in bold style. and centerd "
                 "Avoid unnecessary jargon. "
-
                 "Text to summarize:\n\n"
                 f"{text}"
             )
@@ -462,12 +465,9 @@ class DocumentSummarizer:
                 "Provide a comprehensive summary of the following document. "
                 "Focus on key facts, findings, and conclusions. "
                 "Organize the summary in a clear structure. "
-                "Keep the Headings bold style. "
                 "Use bullet points for clarity. "
                 "Use a formal tone. "
-                "keep the headings in bold style. and centerd "
                 "Avoid unnecessary jargon. "
-
                 "Text to summarize:\n\n"
                 f"{text}"
             )
@@ -485,7 +485,6 @@ class DocumentSummarizer:
         
         client = OpenAI(api_key=self.openai_key)
 
-        """Generate summary using OpenAI GPT."""
         if not self.openai_available:
             return "OpenAI API is not configured or available"
 
@@ -522,36 +521,47 @@ class DocumentSummarizer:
         if not model_to_use:
             return "❌ No model available. Please configure Gemini, OpenAI, or OpenRouter."
 
-        if model_to_use == "openrouter" or model_to_use == "mistralai/mistral-7b-instruct":
+        # Handle API-based models directly
+        if model_to_use == "openrouter":
             if not self.openrouter_available:
-                return "OpenRouter API not available."
-            return self.format_summary(self.summarize_with_openrouter(text), style=format_style)
+                logger.warning("OpenRouter API not available, trying fallback...")
+                if self.gemini_available:
+                    model_to_use = "gemini"
+                elif self.openai_available:
+                    model_to_use = "openai"
+                else:
+                    return "OpenRouter API not available and no fallback models."
+            else:
+                summary = self.summarize_with_openrouter(text)
+                return self.format_summary(summary, style=format_style)
 
         if model_to_use == "gemini":
             if not self.gemini_available:
-                logger.warning(
-                    "Gemini API not available, falling back to OpenAI if configured.")
+                logger.warning("Gemini API not available, trying fallback...")
                 if self.openai_available:
                     model_to_use = "openai"
                 elif self.openrouter_available:
                     model_to_use = "openrouter"
                 else:
-                    return "Gemini, OpenAI, and OpenRouter APIs are not available."
+                    return "Gemini API not available and no fallback models."
             else:
-                return self.format_summary(self.summarize_with_gemini(text), style=format_style)
+                summary = self.summarize_with_gemini(text)
+                return self.format_summary(summary, style=format_style)
 
         if model_to_use == "openai":
             if not self.openai_available:
-                logger.warning(
-                    "OpenAI API not available, falling back to OpenRouter if configured.")
-                if self.openrouter_available:
+                logger.warning("OpenAI API not available, trying fallback...")
+                if self.gemini_available:
+                    model_to_use = "gemini"
+                elif self.openrouter_available:
                     model_to_use = "openrouter"
                 else:
-                    return "OpenAI and OpenRouter APIs are not available."
+                    return "OpenAI API not available and no fallback models."
             else:
-                return self.format_summary(self.summarize_with_openai(text), style=format_style)
+                summary = self.summarize_with_openai(text)
+                return self.format_summary(summary, style=format_style)
 
-        # For local models
+        # For local models (not API-based)
         if model_to_use not in self.tokenizers or model_to_use not in self.models_loaded:
             if not self.load_model(model_to_use):
                 return f"Failed to load model: {model_to_use}"
@@ -650,6 +660,7 @@ class DocumentSummarizer:
             return self.summarize_text(combined_summary, model_name, format_style)
 
         return self.format_summary(combined_summary, format_style)
+
     def build_knowledge_base(self, text: str):
         """Split text and build in-memory vector index"""
         logger.info(f"📄 Document length: {len(text)}")
@@ -658,7 +669,9 @@ class DocumentSummarizer:
         if len(text.strip().split()) < 50:
             self.doc_chunks = [text.strip()]
         else:
-            self.doc_chunks = self.split_text_smart(text, self.embedder, max_tokens=150)
+            # Use tiktoken for splitting instead of embedder
+            tokenizer = tiktoken.get_encoding("cl100k_base")
+            self.doc_chunks = self.split_text_smart(text, tokenizer, max_tokens=150)
 
         if not self.doc_chunks:
             logger.warning("⚠️ No chunks were created. Falling back to full text as one chunk.")
@@ -670,7 +683,6 @@ class DocumentSummarizer:
         self.doc_embeddings = self.embedder.encode(self.doc_chunks, convert_to_tensor=True)
         logger.info(f"✅ Knowledge base created with {len(self.doc_chunks)} chunks.")
 
-
     def retrieve_relevant_chunks(self, query: str, top_k=3) -> List[str]:
         """Return top-k relevant chunks for the query"""
         if not self.doc_chunks:
@@ -680,54 +692,50 @@ class DocumentSummarizer:
         hits = util.semantic_search(query_embedding, self.doc_embeddings, top_k=top_k)
         top_chunks = [self.doc_chunks[hit['corpus_id']] for hit in hits[0]]
         return top_chunks
+
     def answer_question(self, question: str, model_name: str = "openrouter") -> str:
         """Answer question using retrieved context and chosen model"""
         context_chunks = self.retrieve_relevant_chunks(question, top_k=3)
         context = "\n\n".join(context_chunks)
 
         prompt = (
-                "Use the following context to answer the question.\n\n"
-                f"Context:\n{context}\n\n"
-                f"Question: {question}\n"
-                "Answer:"
-            )
+            "Use the following context to answer the question.\n\n"
+            f"Context:\n{context}\n\n"
+            f"Question: {question}\n"
+            "Answer:"
+        )
 
         if model_name == "gemini" and self.gemini_available:
-                try:
-                    model = genai.GenerativeModel("gemini-1.5-pro")
-                    response = model.generate_content(prompt)
-                    return response.text.strip()
-                except Exception as e:
-                    return f"Gemini QA error: {e}"
+            try:
+                model = genai.GenerativeModel("gemini-1.5-pro")
+                response = model.generate_content(prompt)
+                return response.text.strip()
+            except Exception as e:
+                return f"Gemini QA error: {e}"
 
         elif model_name == "openai" and self.openai_available:
-                try:
-                    client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))  # or use global
-                    response = client.chat.completions.create(
-                        model="gpt-3.5-turbo",
-                        messages=[
-                            {"role": "system", "content": "You are a helpful assistant."},
-                            {"role": "user", "content": prompt}
-                        ]
-                    )
-                    return response.choices[0].message.content.strip()
-                except Exception as e:
-                    return f"OpenAI QA error: {e}"
-        elif model_name == "openrouter" or model_name == "mistralai/mistral-7b-instruct":
-            import requests
-            openrouter_key = os.getenv("OPENROUTER_API_KEY")
+            try:
+                client = openai.OpenAI(api_key=self.openai_key)
+                response = client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=[
+                        {"role": "system", "content": "You are a helpful assistant."},
+                        {"role": "user", "content": prompt}
+                    ]
+                )
+                return response.choices[0].message.content.strip()
+            except Exception as e:
+                return f"OpenAI QA error: {e}"
 
-            if not openrouter_key:
-                return "OpenRouter API key not configured."
-
+        elif model_name == "openrouter" and self.openrouter_available:
             try:
                 headers = {
-                    "Authorization": f"Bearer {openrouter_key}",
+                    "Authorization": f"Bearer {self.openrouter_key}",
                     "Content-Type": "application/json"
                 }
 
                 payload = {
-                    "model": "mistralai/mistral-7b-instruct",  # or another OpenRouter-supported model
+                    "model": "mistralai/mistral-7b-instruct",
                     "messages": [
                         {"role": "system", "content": "You are a helpful assistant that answers based on provided context."},
                         {"role": "user", "content": prompt}
@@ -736,11 +744,10 @@ class DocumentSummarizer:
                 }
 
                 response = requests.post("https://openrouter.ai/api/v1/chat/completions",
-                                        headers=headers, json=payload)
-
+                                        headers=headers, json=payload, timeout=30)
+                response.raise_for_status()
                 data = response.json()
-                return data
-
+                return data['choices'][0]['message']['content'].strip()
             except Exception as e:
                 return f"OpenRouter QA error: {e}"
 
@@ -769,7 +776,7 @@ def parse_args():
     )
     parser.add_argument(
         "--api-key", default=None,
-        help=" API key (if not set in environment variable)"
+        help="API key (if not set in environment variable)"
     )
     parser.add_argument(
         "--verbose", "-v", action="store_true",

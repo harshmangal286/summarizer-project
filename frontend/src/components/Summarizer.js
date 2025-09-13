@@ -17,7 +17,17 @@ const Summarizer = ({ addToHistory, resetChat, currentChat }) => {
   const [showSummaryMsg, setShowSummaryMsg] = useState(false);
   const [fileExpanded, setFileExpanded] = useState(true);
   const [chatStarted, setChatStarted] = useState(false);
-  const [selectedModel] = useState("gemini");
+  const [selectedModel, setSelectedModel] = useState("gemini"); // Changed to state so you can change it
+  // Model mapping - frontend display names to backend service names
+  const MODEL_MAPPING = {
+    "gemini": "gemini",
+    "openai": "openai", 
+    "mistral": "mistralai/mistral-7b-instruct", // This maps to "openrouter" in backend
+    "bart": "bart",
+    "t5-large": "t5-large",
+    "t5-base": "t5-base",
+    "t5-small": "t5-small"
+  };
 
   // Cleanup URL on unmount
   useEffect(() => {
@@ -92,7 +102,10 @@ const Summarizer = ({ addToHistory, resetChat, currentChat }) => {
 
     const formData = new FormData();
     formData.append("file", selectedFile);
-    formData.append("model", selectedModel);
+    
+    // Use the mapped model name for the backend
+    const backendModelName = MODEL_MAPPING[selectedModel] || selectedModel;
+    formData.append("model", backendModelName);
 
     try {
       const response = await axios.post("http://127.0.0.1:8000/summarize", formData, {
@@ -104,6 +117,7 @@ const Summarizer = ({ addToHistory, resetChat, currentChat }) => {
       setShowSummaryMsg(true);
       addToHistory(selectedFile, response.data.summary);
     } catch (err) {
+      console.error("Summarization error:", err);
       setError("Failed to summarize. Please try again.");
     } finally {
       setLoading(false);
@@ -141,6 +155,26 @@ const Summarizer = ({ addToHistory, resetChat, currentChat }) => {
     <div className="container text-center">
       <h1 className="text-center">Document Summarizer</h1>
       <p className="lead text-center">Summarize PDF and text documents with ease.</p>
+
+      {/* Model Selection Dropdown */}
+      <div className="mb-3">
+        <label htmlFor="modelSelect" className="form-label">Select Model:</label>
+        <select 
+          id="modelSelect"
+          className="form-select mx-auto" 
+          style={{width: "200px"}}
+          value={selectedModel}
+          onChange={(e) => setSelectedModel(e.target.value)}
+        >
+          <option value="gemini">Gemini</option>
+          <option value="openai">OpenAI</option>
+          <option value="mistral">Mistral (OpenRouter)</option>
+          <option value="bart">BART</option>
+          <option value="t5-large">T5-Large</option>
+          <option value="t5-base">T5-Base</option>
+          <option value="t5-small">T5-Small</option>
+        </select>
+      </div>
 
       <div className="button-container">
         {!selectedFile && (
@@ -224,19 +258,8 @@ const Summarizer = ({ addToHistory, resetChat, currentChat }) => {
               setFileExpanded(false); // Collapse preview on first chat
             }}
           />
-
         </div>
       )}
-
-      { /*Chatbot component*/}
-      {
-        // <Chatbot
-        //   onFirstChat={() => {
-        //     setChatStarted(true);
-        //     setFileExpanded(false); // Collapse on first chat
-        //   }}
-        // />
-      }
     </div>
   );
 };

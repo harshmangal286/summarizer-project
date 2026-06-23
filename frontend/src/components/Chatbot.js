@@ -33,7 +33,7 @@ const Chatbot = ({ onFirstChat }) => {
       //   formData.append("file", pendingFile, pendingFile.name);
       // }
 
-      const res = await axios.post("http://127.0.0.1:8000/chat", formData, {
+      const res = await axios.post("http://localhost:8000/chat", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
 

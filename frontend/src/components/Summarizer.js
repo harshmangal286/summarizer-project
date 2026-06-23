@@ -108,7 +108,7 @@ const Summarizer = ({ addToHistory, resetChat, currentChat }) => {
     formData.append("model", backendModelName);
 
     try {
-      const response = await axios.post("http://127.0.0.1:8000/summarize", formData, {
+      const response = await axios.post("http://localhost:8000/summarize", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
 

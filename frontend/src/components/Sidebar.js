@@ -47,7 +47,7 @@ function Sidebar({ chats, onNewChat, setCurrentChat }) {
         ) : (
           chats.map((chat, index) => (
             <li
-              key={chat.id || index}
+              key={`${chat.id || 'chat'}-${index}`}
               className="history-name"
               onClick={() => setCurrentChat(chat)}
               style={{ cursor: "pointer" }}

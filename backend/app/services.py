@@ -1,9 +1,8 @@
 import os
 import re
-import fitz  # PyMuPDF for PDF handling
+import pymupdf as fitz  # PyMuPDF for PDF handling
 import docx
 import logging
-import nltk
 import torch
 import concurrent.futures
 import argparse
@@ -20,8 +19,6 @@ import openai
 from sentence_transformers import SentenceTransformer, util
 import tiktoken
 
-nltk.download("punkt_tab")
-
 # Configure logging with more detailed format
 logging.basicConfig(
     level=logging.INFO,
@@ -30,6 +27,11 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
+
+
+def tokenize_sentences(text: str) -> List[str]:
+    sentences = re.split(r'(?<=[.!?])\s+', text.strip())
+    return [s.strip() for s in sentences if s.strip()]
 
 
 @dataclass
@@ -52,7 +54,7 @@ class ModelConfig:
 MODEL_CONFIGS = {
     "gemini": ModelConfig(model_id="google/gemini-1.5-pro", max_input_length=8192),
     "openai": ModelConfig(model_id="gpt-3.5-turbo", max_input_length=4096),
-    "openrouter": ModelConfig(model_id="mistralai/mistral-7b-instruct", max_input_length=4096)
+    "openrouter": ModelConfig(model_id="openai/gpt-3.5-turbo", max_input_length=4096)
 }
 
 # Heading categories to extract (configurable)
@@ -144,7 +146,7 @@ class DocumentSummarizer:
                         "X-Title": "DocSummarizer"
                     },
                     json={
-                        "model": "mistralai/mistral-7b-instruct",
+                        "model": "openai/gpt-3.5-turbo",
                         "messages": [{"role": "user", "content": "Ping"}]
                     },
                     timeout=10
@@ -375,7 +377,7 @@ class DocumentSummarizer:
             logger.warning("⚠️ Input text is empty. Skipping split.")
             return []
 
-        sentences = nltk.sent_tokenize(text)
+        sentences = tokenize_sentences(text)
         chunks, current_chunk = [], []
         token_count = 0
 
@@ -437,7 +439,7 @@ class DocumentSummarizer:
                     "X-Title": "DocSummarizer"
                 },
                 json={
-                    "model": "mistralai/mistral-7b-instruct",
+                    "model": "openai/gpt-3.5-turbo",
                     "messages": [
                         {"role": "system", "content": "You are a helpful assistant."},
                         {"role": "user", "content": prompt}

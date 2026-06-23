@@ -6,7 +6,7 @@ const summarizeFile = async (file) => {
 
     console.log("Sending file:", file.name);
 
-    const response = await fetch("http://127.0.0.1:8000/summarize", {
+    const response = await fetch("http://localhost:8000/summarize", {
       method: "POST",
       body: formData,
     });
